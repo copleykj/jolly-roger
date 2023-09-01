@@ -2,6 +2,7 @@
 import { Meteor } from 'meteor/meteor';
 import { Random } from 'meteor/random';
 import { useFind, useSubscribe, useTracker } from 'meteor/react-meteor-data';
+import { faStar as faStarRegular } from '@fortawesome/free-regular-svg-icons/faStar';
 import { faArrowLeft } from '@fortawesome/free-solid-svg-icons/faArrowLeft';
 import { faArrowRight } from '@fortawesome/free-solid-svg-icons/faArrowRight';
 import { faCheck } from '@fortawesome/free-solid-svg-icons/faCheck';
@@ -12,6 +13,7 @@ import { faKey } from '@fortawesome/free-solid-svg-icons/faKey';
 import { faPaperPlane } from '@fortawesome/free-solid-svg-icons/faPaperPlane';
 import { faPuzzlePiece } from '@fortawesome/free-solid-svg-icons/faPuzzlePiece';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons/faSpinner';
+import { faStar as faStarSolid } from '@fortawesome/free-solid-svg-icons/faStar';
 import { faTimes } from '@fortawesome/free-solid-svg-icons/faTimes';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type {
@@ -53,6 +55,7 @@ import styled, { css } from 'styled-components';
 import { calendarTimeFormat, shortCalendarTimeFormat } from '../../lib/calendarTimeFormat';
 import { messageDingsUser } from '../../lib/dingwordLogic';
 import { indexedById, sortedBy } from '../../lib/listUtils';
+import Bookmarks from '../../lib/models/Bookmarks';
 import type { ChatMessageType } from '../../lib/models/ChatMessages';
 import ChatMessages from '../../lib/models/ChatMessages';
 import Documents from '../../lib/models/Documents';
@@ -73,6 +76,7 @@ import puzzleForPuzzlePage from '../../lib/publications/puzzleForPuzzlePage';
 import { computeSolvedness } from '../../lib/solvedness';
 import addPuzzleAnswer from '../../methods/addPuzzleAnswer';
 import addPuzzleTag from '../../methods/addPuzzleTag';
+import bookmarkPuzzle from '../../methods/bookmarkPuzzle';
 import createGuess from '../../methods/createGuess';
 import ensurePuzzleDocument from '../../methods/ensurePuzzleDocument';
 import type { ImageSource } from '../../methods/insertDocumentImage';
@@ -284,13 +288,13 @@ const PuzzleMetadataActionRow = styled(PuzzleMetadataRow)`
   a {
     margin-right: 8px;
   }
+`;
+
+const PuzzleMetadataButtons = styled.div`
+  margin-left: auto;
 
   button {
     margin: 2px 0 2px 8px;
-
-    &:first-of-type {
-      margin-left: auto;
-    }
   }
 `;
 
@@ -1011,9 +1015,10 @@ const InsertImage = ({ documentId }: { documentId: string }) => {
 };
 
 const PuzzlePageMetadata = ({
-  puzzle, displayNames, document, isDesktop,
+  puzzle, bookmarked, displayNames, document, isDesktop,
 }: {
   puzzle: PuzzleType;
+  bookmarked: boolean;
   displayNames: Map<string, string>;
   document?: DocumentType;
   isDesktop: boolean;
@@ -1070,6 +1075,10 @@ const PuzzlePageMetadata = ({
     }
   }, []);
 
+  const toggleBookmark = useCallback(() => {
+    bookmarkPuzzle.call({ puzzleId, bookmark: !bookmarked });
+  }, [puzzleId, bookmarked]);
+
   const tagsById = indexedById(allTags);
   const maybeTags: (TagType | undefined)[] = puzzle.tags.map((tagId) => { return tagsById.get(tagId); });
   const tags: TagType[] = maybeTags.filter<TagType>((t): t is TagType => t !== undefined);
@@ -1121,6 +1130,13 @@ const PuzzlePageMetadata = ({
     </Button>
   ) : null;
 
+  const bookmarkText = bookmarked ? 'Unbookmark puzzle' : 'Bookmark puzzle';
+  const bookmarkButton = (
+    <Button onClick={toggleBookmark} variant="link" size="sm" title={bookmarkText}>
+      <FontAwesomeIcon icon={bookmarked ? faStarSolid : faStarRegular} />
+    </Button>
+  );
+
   let guessButton = null;
   if (puzzle.expectedAnswerCount > 0) {
     guessButton = hasGuessQueue ? (
@@ -1164,11 +1180,14 @@ const PuzzlePageMetadata = ({
         onSubmit={onEdit}
       />
       <PuzzleMetadataActionRow>
+        {bookmarkButton}
         {puzzleLink}
         {documentLink}
-        {editButton}
-        {imageInsert}
-        {guessButton}
+        <PuzzleMetadataButtons>
+          {editButton}
+          {imageInsert}
+          {guessButton}
+        </PuzzleMetadataButtons>
       </PuzzleMetadataActionRow>
       <PuzzleMetadataRow>
         {answersElement}
@@ -1842,6 +1861,7 @@ const PuzzlePage = React.memo(() => {
   ), [puzzleDataLoading, puzzleId]);
 
   const activePuzzle = useTracker(() => Puzzles.findOneAllowingDeleted(puzzleId), [puzzleId]);
+  const bookmarked = useTracker(() => !!Bookmarks.findOne({ puzzle: puzzleId, user: Meteor.userId()! }), [puzzleId]);
 
   const selfUser = useTracker(() => Meteor.user()!, []);
 
@@ -1914,6 +1934,7 @@ const PuzzlePage = React.memo(() => {
   const metadata = (
     <PuzzlePageMetadata
       puzzle={activePuzzle}
+      bookmarked={bookmarked}
       document={document}
       displayNames={displayNames}
       isDesktop={isDesktop}
